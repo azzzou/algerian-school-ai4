@@ -1,0 +1,45 @@
+# =============================================================================
+#  Render.com Blueprint - Algerian School Support (Laravel 8 school_dashboard)
+#  Deployment:  dockerContext -> ./school_dashboard, Dockerfile in that dir.
+#  Secrets (APP_KEY, MESSENGER_*) are set in Render Dashboard / env group;
+#  DB_DATABASE & DB_LEADS_DATABASE point at the mounted /data persistent disk.
+# =============================================================================
+
+services:
+  - type: web
+    name: algerian-school-dashboard
+    runtime: docker
+    plan: free
+    dockerContext: ./school_dashboard
+    dockerfilePath: ./school_dashboard/Dockerfile
+    healthCheckPath: /api/health
+    numInstances: 1
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_URL
+        sync: false            # set in Render dashboard (your Render URL)
+      - key: APP_KEY
+        sync: false            # secret - set in Render dashboard / env group
+      - key: DB_CONNECTION
+        value: sqlite
+      - key: DB_DATABASE
+        value: /data/database.sqlite
+      - key: DB_LEADS_DATABASE
+        value: /data/leads.db
+      - key: SESSION_DRIVER
+        value: cookie
+      - key: MESSENGER_VERIFY_TOKEN
+        sync: false            # secret
+      - key: MESSENGER_PAGE_ACCESS_TOKEN
+        sync: false            # secret
+      - key: MESSENGER_APP_SECRET
+        sync: false            # secret
+      - key: AI_API_KEY
+        sync: false            # secret
+    disk:
+      name: sqlite-data
+      mountPath: /data
+      sizeGB: 1

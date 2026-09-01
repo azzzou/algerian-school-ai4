@@ -9,11 +9,8 @@
 .vscode
 .idea
 *.md
-Dockerfile
-fly.toml
-.railwayignore
-railway.json
-nixpacks.toml
+render.yaml
+render.yml
 
 # PHP / Composer (rebuilt inside the image)
 /vendor/
