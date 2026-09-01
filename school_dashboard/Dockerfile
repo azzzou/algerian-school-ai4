@@ -26,7 +26,7 @@ COPY . .
 RUN composer dump-autoload --no-dev --optimize
 
 # ---------------- Stage 2: Runtime image (Apache + mod_php) -----------------
-FROM php:8.0-apache
+FROM php:8.2-apache
 
 # Base system packages needed by extensions / dompdf / tidy output.
 # mbstring/xml/curl/fileinfo/pdo/sqlite3 are built into the php image and are
