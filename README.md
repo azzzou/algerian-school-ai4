@@ -110,9 +110,9 @@ from git — no manual service creation.
 
 | File                                   | Purpose                                                            |
 |----------------------------------------|--------------------------------------------------------------------|
-| `render.yaml`                          | Render blueprint: service, disk, env groups, health check          |
+| `render.yaml`                          | Render blueprint: service, env groups, health check (no disk)      |
 | `school_dashboard/Dockerfile`          | Multi-stage Laravel 8 build (composer → `php:8.0-apache`)          |
-| `school_dashboard/docker/entrypoint.sh`| Binds Apache to `$PORT`, seeds globalave + SQLite on `/data`, migrate |
+| `school_dashboard/docker/entrypoint.sh`| Binds Apache to `$PORT`, seeds + migrates SQLite on boot, migrate |
 
 The `dockerContext` and `dockerfilePath` in `render.yaml` point at
 `school_dashboard`, so the build only sees the Laravel project.
@@ -126,7 +126,7 @@ git add -A && git commit -m "deploy" && git push origin main
 1. On Render → **New → Blueprint** (from repo).
 2. Pick the `algerian-school-ai` repo.
 3. Render auto-detects `render.yaml` and creates the `algerian-school-dashboard`
-   web service plus a 1 GB persistent disk mounted at `/data`.
+   web service (free plan — no persistent disk).
 
 ### 2. Set the secrets (marked `sync: false` in render.yaml)
 
@@ -144,8 +144,8 @@ AI_API_KEY
 
 The following are already set by `render.yaml` (no need to touch them unless you
 want overrides): `APP_ENV=production`, `APP_DEBUG=false`, `DB_CONNECTION=sqlite`,
-`DB_DATABASE=/data/database.sqlite`, `DB_LEADS_DATABASE=/data/leads.db`,
-`SESSION_DRIVER=cookie`.
+`SESSION_DRIVER=cookie`. The SQLite DB uses Laravel's default path
+(`database/database.sqlite`) inside the container.
 
 ### 3. Deploy & verify
 
@@ -154,9 +154,11 @@ want overrides): `APP_ENV=production`, `APP_DEBUG=false`, `DB_CONNECTION=sqlite`
 - Messenger webhook lives at `https://<your-domain>/api/webhook` (note the
   `/api` prefix because `routes/api.php` is mounted under the `api` route group).
 
-> **Note:** SQLite is stored on the persistent disk at `/data`, so leads survive
-> redeploys. The `database/database.sqlite` file is git-ignored; a fresh disk is
-> created and migrated automatically on first boot.
+> **Note:** Render's free plan has **no persistent disk**, so the SQLite
+> `database/database.sqlite` is ephemeral — it is re-created and migrated on
+> every start (data is not kept across redeploys). For durable data, upgrade to
+> a paid Render plan and add a 1 GB disk via the dashboard, or move to
+> PostgreSQL (Render Free Postgres).
 
 ---
 

@@ -59,8 +59,9 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # injects env at runtime, so baking caches with empty APP_KEY would lock in
 # invalid config. Laravel boots fresh from runtime env instead.
 
-# Persistent-storage mount point (render.yaml disk -> /data) for SQLite.
-RUN mkdir -p /data && chown www-data:www-data /data
+# Writeable SQLite location (Laravel default) for the free plan — no disk.
+RUN mkdir -p /var/www/html/database /var/www/html/storage \
+    && chown -R www-data:www-data /var/www/html/database /var/www/html/storage
 
 EXPOSE 80
 
