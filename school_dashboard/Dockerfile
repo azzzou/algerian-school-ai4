@@ -29,13 +29,16 @@ RUN composer dump-autoload --no-dev --optimize
 FROM php:8.0-apache
 
 # Base system packages needed by extensions / dompdf / tidy output.
+# mbstring/xml/curl/fileinfo/pdo/sqlite3 are built into the php image and are
+# NOT passed to docker-php-ext-install (doing so fails the build). Only the
+# extensions that need compiling are installed below.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git unzip libzip-dev libpng-dev libjpeg-dev libfreetype6-dev \
-        libxml2-dev libcurl4-openssl-dev \
+        libxml2-dev libcurl4-openssl-dev libsqlite3-dev \
     && docker-php-ext-configure gd \
         --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) \
-        pdo pdo_sqlite sqlite3 mbstring xml curl zip bcmath gd fileinfo \
+        pdo_sqlite zip bcmath gd \
     && a2enmod rewrite headers \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
