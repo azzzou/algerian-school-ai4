@@ -1,7 +1,9 @@
 # =============================================================================
 #  Render.com Blueprint - Algerian School Support (Laravel 8 school_dashboard)
 #  Deployment:  dockerContext -> ./school_dashboard, Dockerfile in that dir.
-#  Secrets (APP_KEY, MESSENGER_*) are set in Render Dashboard / env group.
+#  Essential Laravel vars (APP_ENV, APP_DEBUG, APP_KEY) are defined here.
+#  Messenger secrets (MESSENGER_*) and AI_API_KEY are sync:false -> set them
+#  in Render Dashboard / env group before deploy.
 #  No persistent disk (free plan): SQLite lives inside the container and is
 #  seeded + migrated on each start; data is ephemeral across redeploys.
 # =============================================================================
@@ -23,7 +25,7 @@ services:
       - key: APP_URL
         sync: false            # set in Render dashboard (your Render URL)
       - key: APP_KEY
-        sync: false            # secret - set in Render dashboard / env group
+        value: "base64:ByOv5Ie6i4ZsNmyWIUIAVgUYRJ1qvqlJwH1nkS5zJ1Q="   # Laravel 32-byte AES key
       - key: DB_CONNECTION
         value: sqlite
       - key: SESSION_DRIVER
