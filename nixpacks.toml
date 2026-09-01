@@ -9,13 +9,17 @@ env = { COMPOSER_ALLOW_SUPERUSER = "1" }
 workdir = "/app/school_dashboard"
 cmds = [
   "curl -sS https://getcomposer.org/installer | php",
-  "php composer.phar install --no-dev --optimize-autoloader --no-interaction"
+  "cd /app/school_dashboard && php composer.phar install --no-dev --optimize-autoloader --no-interaction"
 ]
 
 [phases.build]
 workdir = "/app/school_dashboard"
-cmds = ["php artisan config:cache", "php artisan route:cache", "php artisan view:cache"]
+cmds = [
+  "cd /app/school_dashboard && php artisan config:cache",
+  "cd /app/school_dashboard && php artisan route:cache",
+  "cd /app/school_dashboard && php artisan view:cache"
+]
 
 [start]
 workdir = "/app/school_dashboard"
-cmd = "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=$PORT"
+cmd = "cd /app/school_dashboard && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=$PORT"
