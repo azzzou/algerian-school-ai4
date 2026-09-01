@@ -18,7 +18,8 @@ RUN composer install \
       --no-autoloader \
       --no-interaction \
       --no-progress \
-      --prefer-dist
+      --prefer-dist \
+      --ignore-platform-reqs
 
 # Bring in the rest of the source, then build a production-optimised autoloader.
 COPY . .
