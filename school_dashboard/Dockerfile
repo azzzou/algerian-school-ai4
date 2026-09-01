@@ -43,6 +43,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Expose Render's default arbitrary port (overridden at runtime by entrypoint).
+# NOTE: dockerContext is ./school_dashboard, so the Laravel files are copied to
+# /var/www/html/ directly (no /var/www/html/school_dashboard subfolder exists).
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 
 # Point Apache at Laravel's public/ directory.

@@ -31,6 +31,14 @@ if [ ! -f "${DB_DATABASE}" ] || [ ! -s "${DB_DATABASE}" ]; then
 fi
 chown www-data:www-data "${DB_DATABASE}" 2>/dev/null || true
 
+# Make Laravel runtime storage writable (logs, cache, sessions, views).
+chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache 2>/dev/null || true
+chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache 2>/dev/null || true
+
+# Clear any stale config/cache so the app boots from the runtime env (APP_KEY etc.).
+php artisan config:clear 2>/dev/null || true
+php artisan cache:clear 2>/dev/null || true
+
 # Apply any pending schema changes (non-fatal so health probe passes early).
 php artisan migrate --force 2>/dev/null || true
 
