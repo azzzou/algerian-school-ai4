@@ -2,11 +2,14 @@
 # Laravel project is in school_dashboard/ subdirectory
 
 [phases.setup]
-nixPkgs = ["php82", "php82Extensions.pdo", "php82Extensions.pdo_sqlite", "php82Extensions.sqlite3", "php82Extensions.mbstring", "php82Extensions.xml", "php82Extensions.curl", "php82Extensions.zip", "php82Extensions.bcmath", "php82Extensions.gd", "php82Extensions.fileinfo", "composer"]
+nixPkgs = ["php82", "php82Extensions.pdo", "php82Extensions.pdo_sqlite", "php82Extensions.sqlite3", "php82Extensions.mbstring", "php82Extensions.xml", "php82Extensions.curl", "php82Extensions.zip", "php82Extensions.bcmath", "php82Extensions.gd", "php82Extensions.fileinfo"]
 
 [phases.install]
 workdir = "school_dashboard"
-cmds = ["composer install --no-dev --optimize-autoloader --no-interaction"]
+cmds = [
+  "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer",
+  "composer install --no-dev --optimize-autoloader --no-interaction"
+]
 
 [phases.build]
 workdir = "school_dashboard"
