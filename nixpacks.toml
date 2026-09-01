@@ -1,9 +1,9 @@
 # Nixpacks configuration for Railway
 # Laravel project is in school_dashboard/ subdirectory
+# All environment variables are set in Railway Variable Dashboard
 
 [phases.setup]
 nixPkgs = ["php82", "php82Extensions.pdo", "php82Extensions.pdo_sqlite", "php82Extensions.sqlite3", "php82Extensions.mbstring", "php82Extensions.xml", "php82Extensions.curl", "php82Extensions.zip", "php82Extensions.bcmath", "php82Extensions.gd", "php82Extensions.fileinfo"]
-env = { COMPOSER_ALLOW_SUPERUSER = "1" }
 
 [phases.install]
 workdir = "/app/school_dashboard"
