@@ -320,7 +320,7 @@ MESSENGER_REPLY_LANGUAGE=darija
 MESSENGER_SCHOOL_NAME=مدرستنا
 
 # AI Engine
-AI_API_KEY=sk-algerian-school-ai-2026-production-key
+AI_API_KEY=<your_generated_key>
 ```
 
 ---
