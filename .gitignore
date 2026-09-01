@@ -54,6 +54,9 @@ Thumbs.db
 # Railway
 .railway/
 
+# Render
+.render/
+
 # Archives
 *.zip
 *.tar.gz

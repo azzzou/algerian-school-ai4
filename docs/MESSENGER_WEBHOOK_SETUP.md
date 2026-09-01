@@ -156,18 +156,29 @@ You should see:
 
 ## Step 6: Production Deployment
 
-### 6.1 Use a Real Domain
-1. Replace ngrok with a proper domain
-2. Use HTTPS (required by Facebook)
-3. Update `MESSENGER_AI_SERVICE_URL` in `.env`
+### 6.1 Deploy the Laravel dashboard to Render
+1. The repo ships a `render.yaml` Blueprint (Docker web service + 1 GB disk).
+2. Push `main`, then Render → **New → Blueprint** → select the repo. Render
+   auto-creates the `algerian-school-dashboard` service.
+3. In **Render Dashboard → Environment**, set the `sync: false` secrets:
+   `APP_KEY`, `APP_URL`, `MESSENGER_VERIFY_TOKEN`, `MESSENGER_PAGE_ACCESS_TOKEN`,
+   `MESSENGER_APP_SECRET`, `AI_API_KEY`.
+4. Deploy. Apache binds to Render's `$PORT`; health check hits `/api/health`.
 
-### 6.2 Enable Webhook
+### 6.2 Use a Real Domain
+1. Replace ngrok with the Render URL (or attach a custom domain in Render).
+2. Use HTTPS (required by Facebook — Render provides TLS automatically).
+3. Update `MESSENGER_AI_SERVICE_URL` in the Render environment to point at the
+   AI engine's public URL.
+
+### 6.3 Enable Webhook
 1. In Facebook Developer Dashboard
 2. Go to Messenger > Settings
 3. Enable **"Webhook"**
-4. Set your production URL
+4. Set Callback URL to `https://<your-render-domain>/api/webhook/...` (the
+   routes are under the `api` prefix on Render).
 
-### 6.3 Submit for Review
+### 6.4 Submit for Review
 1. Complete App Review
 2. Request `pages_messaging` permission
 3. Submit for Facebook review

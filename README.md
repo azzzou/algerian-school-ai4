@@ -100,6 +100,66 @@ docker compose down -v
 
 ---
 
+## ☁️ Deploy to Render (Laravel dashboard)
+
+The school dashboard deploys as a Docker web service on **Render**. A blueprint
+(`render.yaml`) is included at the repo root, so Render provisions everything
+from git — no manual service creation.
+
+### Files that drive the deployment
+
+| File                                   | Purpose                                                            |
+|----------------------------------------|--------------------------------------------------------------------|
+| `render.yaml`                          | Render blueprint: service, disk, env groups, health check          |
+| `school_dashboard/Dockerfile`          | Multi-stage Laravel 8 build (composer → `php:8.0-apache`)          |
+| `school_dashboard/docker/entrypoint.sh`| Binds Apache to `$PORT`, seeds globalave + SQLite on `/data`, migrate |
+
+The `dockerContext` and `dockerfilePath` in `render.yaml` point at
+`school_dashboard`, so the build only sees the Laravel project.
+
+### 1. Push and create the Render service
+
+```bash
+git add -A && git commit -m "deploy" && git push origin main
+```
+
+1. On Render → **New → Blueprint** (from repo).
+2. Pick the `algerian-school-ai` repo.
+3. Render auto-detects `render.yaml` and creates the `algerian-school-dashboard`
+   web service plus a 1 GB persistent disk mounted at `/data`.
+
+### 2. Set the secrets (marked `sync: false` in render.yaml)
+
+In Render Dashboard → **Environment** for the service, add:
+
+```bash
+APP_KEY            # generate via `php artisan key:generate`, or
+                   #   `php -r "echo 'base64:'.base64_encode(random_bytes(32));"`
+APP_URL            # your Render URL (e.g. https://algerian-school-dashboard.onrender.com)
+MESSENGER_VERIFY_TOKEN
+MESSENGER_PAGE_ACCESS_TOKEN
+MESSENGER_APP_SECRET
+AI_API_KEY
+```
+
+The following are already set by `render.yaml` (no need to touch them unless you
+want overrides): `APP_ENV=production`, `APP_DEBUG=false`, `DB_CONNECTION=sqlite`,
+`DB_DATABASE=/data/database.sqlite`, `DB_LEADS_DATABASE=/data/leads.db`,
+`SESSION_DRIVER=cookie`.
+
+### 3. Deploy & verify
+
+- Render builds and starts the container. Apache listens on Render's `$PORT`.
+- Health check: `GET /api/health` → `200 {"status":"ok",...}`.
+- Messenger webhook lives at `https://<your-domain>/api/webhook` (note the
+  `/api` prefix because `routes/api.php` is mounted under the `api` route group).
+
+> **Note:** SQLite is stored on the persistent disk at `/data`, so leads survive
+> redeploys. The `database/database.sqlite` file is git-ignored; a fresh disk is
+> created and migrated automatically on first boot.
+
+---
+
 ## 💬 AI Engine API
 
 ### `POST /v1/reply`
