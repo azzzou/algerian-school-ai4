@@ -1,0 +1,28 @@
+# =============================================================================
+#  Algerian School Support - school_dashboard (Laravel 8) - Fly.io config
+#  Deploy from this directory:  flyctl deploy --config fly.toml
+#  Build context is school_dashboard, so the Dockerfile here builds the
+#  Laravel app directly. Runtime secrets via `flyctl secrets set ...`.
+# =============================================================================
+
+app = "algerian-school-dashboard"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Public HTTP entry point -> Apache mod_php on port 80.
+[http_service]
+  internal_port = 80
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  http_checks = [
+    {
+      interval = "30s",
+      timeout = "5s",
+      grace_period = "30s",
+      method = "GET",
+      path = "/api/health"
+    }
+  ]
