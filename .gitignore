@@ -1,0 +1,59 @@
+# Environment & secrets
+.env
+.env.local
+.env.backup
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.pyc
+
+# Node
+node_modules/
+package-lock.json
+
+# Laravel
+/vendor/
+/school_dashboard/vendor/
+/school_dashboard/storage/logs/*.log
+/school_dashboard/storage/framework/cache/*
+/school_dashboard/storage/framework/sessions/*
+/school_dashboard/storage/framework/views/*
+/school_dashboard/bootstrap/cache/*.php
+/school_dashboard/public/hot
+/school_dashboard/public/storage
+
+# AI Engine
+/ai_engine/models/
+/ai_engine/.venv/
+/ai_engine/__pycache__/
+/ai_engine/data/
+/ai_engine/*.db
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Railway
+.railway/
+
+# Archives
+*.zip
+*.tar.gz

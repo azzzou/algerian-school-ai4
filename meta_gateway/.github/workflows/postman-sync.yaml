@@ -1,0 +1,26 @@
+name: Sync Postman Collection
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Upload Instagram Collection
+      run: |
+        curl -L -X PUT 'https://api.getpostman.com/collections/23987686-9386f468-7714-490f-9bfc-9442db5c8f00' \
+        --header 'X-Api-Key: ${{ secrets.POSTMAN_API_KEY }}' \
+        -F 'collection=@postman/instagram-platform-api.postman_collection.json;type=application/json'
+
+    - name: Upload Messenger Collection
+      run: |
+        curl -L -X PUT 'https://api.getpostman.com/collections/22794852-408702ca-c162-4ab3-97ac-56c1d585cc0a' \
+        --header 'X-Api-Key: ${{ secrets.POSTMAN_API_KEY }}' \
+        -F 'collection=@postman/messenger-platform-api.postman_collection.json;type=application/json'
