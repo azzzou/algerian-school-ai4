@@ -18,6 +18,13 @@ DB_DATABASE="${DB_DATABASE:-${APP_DIR}/database/database.sqlite}"
 
 echo "[entrypoint] Port=${PORT} AppDir=${APP_DIR}"
 
+# --- 0. Preconditions ---------------------------------------------------------
+# Render injects these at runtime. APP_KEY is required for cookie/session
+# encryption; warn clearly instead of failing cryptically later.
+if [ -z "${APP_KEY:-}" ]; then
+    echo "[entrypoint] WARN: APP_KEY is not set. Set it in Render Dashboard / env group." >&2
+fi
+
 # --- 1. Apache ports ---------------------------------------------------------
 sed -ri "s/^Listen .*/Listen ${PORT}/" /etc/apache2/ports.conf
 sed -ri "s/^<VirtualHost .*>/<VirtualHost *:${PORT}>/" /etc/apache2/sites-available/*.conf /etc/apache2/sites-enabled/*.conf
@@ -60,12 +67,15 @@ chown www-data:www-data "${DB_DATABASE}" 2>/dev/null || true
 run_laravel() {
     _cmd="php artisan $*"
     if [ "$(id -u)" = "0" ]; then
+        # Prefer running as www-data so our caches are theirs from the start.
         if su -s /bin/sh www-data -c "$_cmd" 2>/dev/null; then
             return 0
         fi
-        sh -c "$_cmd" || return 1
+        # Fallback: run as root, then make the output writable by www-data.
+        sh -c "$_cmd"
+        _rc=$?
         chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
-        return 0
+        return ${_rc}
     fi
     php artisan "$@"
 }

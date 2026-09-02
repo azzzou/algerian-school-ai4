@@ -84,4 +84,9 @@ RUN mkdir -p storage/app/public storage/framework/cache/data \
 
 EXPOSE 80
 
+# Optional orchestrator health probe. Uses PHP (always present) rather than
+# curl. Render performs its OWN probe via render.yaml healthCheckPath=/api/health.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD php -r 'exit(@file_get_contents("http://127.0.0.1:".(getenv("PORT")?:80)."/api/health")===false?1:0);'
+
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
