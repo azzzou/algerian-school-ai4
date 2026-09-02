@@ -69,16 +69,35 @@ class MessengerWebhookController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Not a page event'], 404);
         }
 
-        // Process each entry
-        if (isset($body['entry'])) {
-            foreach ($body['entry'] as $entry) {
-                $pageId = $entry['id'] ?? null;
-                $events = $entry['messaging'] ?? [];
+        try {
+            // Process each entry
+            if (isset($body['entry']) && is_array($body['entry'])) {
+                foreach ($body['entry'] as $entry) {
+                    // Guard against malformed entries coming from Facebook.
+                    if (!is_array($entry)) {
+                        continue;
+                    }
 
-                foreach ($events as $event) {
-                    $this->processMessagingEvent($event, $pageId);
+                    $pageId = $entry['id'] ?? null;
+                    $events = isset($entry['messaging']) && is_array($entry['messaging'])
+                        ? $entry['messaging']
+                        : [];
+
+                    foreach ($events as $event) {
+                        if (is_array($event)) {
+                            $this->processMessagingEvent($event, $pageId);
+                        }
+                    }
                 }
             }
+        } catch (\Throwable $e) {
+            // Never let an unhandled exception bubble up: log it precisely and
+            // still ack Facebook with 200 so it does not retry indefinitely.
+            \Log::error('Error processing Messenger webhook: ' . $e->getMessage(), [
+                'exception' => get_class($e),
+                'file'      => $e->getFile(),
+                'line'      => $e->getLine(),
+            ]);
         }
 
         // Always return 200 to Facebook
@@ -90,35 +109,46 @@ class MessengerWebhookController extends Controller
      */
     protected function processMessagingEvent(array $event, ?string $pageId): void
     {
-        $senderId = $event['sender']['id'] ?? null;
-        $recipientId = $event['recipient']['id'] ?? null;
-        $timestamp = $event['timestamp'] ?? null;
-        $message = $event['message'] ?? null;
-        $postback = $event['postback'] ?? null;
+        try {
+            // Safely extract nested keys; never assume Facebook always sends them.
+            $senderId = $event['sender']['id'] ?? null;
+            $recipientId = $event['recipient']['id'] ?? null;
+            $timestamp = $event['timestamp'] ?? null;
+            $message = (isset($event['message']) && is_array($event['message'])) ? $event['message'] : null;
+            $postback = $event['postback'] ?? null;
 
-        // Only process text messages
-        if (!$message || !isset($message['text'])) {
-            Log::debug('Skipping non-text messaging event', ['event' => $event]);
-            return;
+            // Only process text messages — skip everything else safely.
+            if (!$message || !isset($message['text']) || !is_string($message['text'])) {
+                Log::debug('Skipping non-text messaging event', ['event' => $event]);
+                return;
+            }
+
+            $messageText = $message['text'];
+            $messageId = $message['mid'] ?? null;
+
+            Log::info('Messenger message received', [
+                'sender' => $senderId,
+                'text' => $messageText,
+                'message_id' => $messageId,
+            ]);
+
+            // Process through AI engine
+            $aiResult = $this->processWithAI($messageText, (string) $senderId);
+
+            // Store lead in database
+            $this->storeLead($aiResult, $messageText, (string) $senderId, $pageId);
+
+            // Auto-reply to user
+            $this->sendAutoReply((string) $senderId, $aiResult['reply_text'] ?? null);
+        } catch (\Throwable $e) {
+            // Log accurately but never let one event break the whole batch.
+            \Log::error('Error processing Messenger event: ' . $e->getMessage(), [
+                'exception' => get_class($e),
+                'file'      => $e->getFile(),
+                'line'      => $e->getLine(),
+                'event'     => $event,
+            ]);
         }
-
-        $messageText = $message['text'];
-        $messageId = $message['mid'] ?? null;
-
-        Log::info('Messenger message received', [
-            'sender' => $senderId,
-            'text' => $messageText,
-            'message_id' => $messageId,
-        ]);
-
-        // Process through AI engine
-        $aiResult = $this->processWithAI($messageText, $senderId);
-
-        // Store lead in database
-        $lead = $this->storeLead($aiResult, $messageText, $senderId, $pageId);
-
-        // Auto-reply to user
-        $this->sendAutoReply($senderId, $aiResult['reply_text'] ?? null);
     }
 
     /**
@@ -204,30 +234,44 @@ class MessengerWebhookController extends Controller
         if (is_object($extractedInfo)) {
             $extractedInfo = (array) $extractedInfo;
         }
+        if (!is_array($extractedInfo)) {
+            $extractedInfo = [];
+        }
 
-        $lead = Lead::create([
-            'id'               => Str::uuid()->toString(),
-            'created_at'       => now('UTC')->toIso8601String(),
-            'source'           => 'messenger',
-            'conversation_id'  => $senderId,
-            'raw_message'      => $rawMessage,
-            'student_name'     => $extractedInfo['student_name'] ?? null,
-            'phone_number'     => $extractedInfo['phone_number'] ?? null,
-            'branch_or_level'  => $extractedInfo['branch_or_level'] ?? null,
-            'lead_score'       => strtoupper($extractedInfo['lead_score'] ?? 'COLD'),
-            'level'            => $extractedInfo['level'] ?? null,
-            'filiere'          => $extractedInfo['filiere'] ?? null,
-            'subject'          => $extractedInfo['subject'] ?? null,
-            'ai_reply'         => $aiResult['reply_text'] ?? null,
-        ]);
+        try {
+            $lead = Lead::create([
+                'id'               => Str::uuid()->toString(),
+                'created_at'       => now('UTC')->toIso8601String(),
+                'source'           => 'messenger',
+                'conversation_id'  => $senderId,
+                'raw_message'      => $rawMessage,
+                'student_name'     => $extractedInfo['student_name'] ?? null,
+                'phone_number'     => $extractedInfo['phone_number'] ?? null,
+                'branch_or_level'  => $extractedInfo['branch_or_level'] ?? null,
+                'lead_score'       => strtoupper($extractedInfo['lead_score'] ?? 'COLD'),
+                'level'            => $extractedInfo['level'] ?? null,
+                'filiere'          => $extractedInfo['filiere'] ?? null,
+                'subject'          => $extractedInfo['subject'] ?? null,
+                'ai_reply'         => $aiResult['reply_text'] ?? null,
+            ]);
 
-        Log::info('Lead stored from Messenger', [
-            'lead_id' => $lead->id,
-            'sender' => $senderId,
-            'score' => $lead->lead_score,
-        ]);
+            Log::info('Lead stored from Messenger', [
+                'lead_id' => $lead->id,
+                'sender' => $senderId,
+                'score' => $lead->lead_score,
+            ]);
 
-        return $lead;
+            return $lead;
+        } catch (\Throwable $e) {
+            // DB (leads.db) may not be writable/configured; log precisely but
+            // return an empty lead so the flow continues without a 500.
+            \Log::error('Failed to store lead from Messenger: ' . $e->getMessage(), [
+                'exception' => get_class($e),
+                'sender'    => $senderId,
+            ]);
+
+            return new Lead();
+        }
     }
 
     /**
