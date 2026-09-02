@@ -102,15 +102,9 @@ fi
 # --- 4. Migrations + seeding (non-fatal so the health probe can pass early) --
 run_laravel migrate --force >/dev/null 2>&1 || echo "[entrypoint] WARN: migrate skipped/failed." >&2
 
-# Guaranteed super-admin so the login page is always reachable. Idempotent: the
-# DefaultAdminSeeder checks by email and never wipes existing users, so it safe
-# to run on every boot even without Shell access (Render free tier).
-run_laravel db:seed --class=DefaultAdminSeeder --force >/dev/null 2>&1 \
-    || echo "[entrypoint] WARN: admin seeder skipped/failed." >&2
-
-# Full dataset (settings, subjects, user types, ...) is only seeded once, on the
-# first boot when the DB is empty. On later restarts the table has rows and the
-# general db:seed is skipped, preserving any admin/user changes made in-app.
+# Full dataset (settings, subjects, user types, users, ...) is only seeded once,
+# on the first boot when the DB is empty. On later restarts the table has rows
+# and the general db:seed is skipped, preserving admin/user changes made in-app.
 _SEED_MARKER="${DB_DATABASE}.seeded"
 if [ ! -f "${_SEED_MARKER}" ]; then
     if run_laravel db:seed --force >/dev/null 2>&1; then
@@ -122,6 +116,14 @@ if [ ! -f "${_SEED_MARKER}" ]; then
 else
     echo "[entrypoint] Full db:seed already run; skipping."
 fi
+
+# Guaranteed super-admin so the login page is always reachable. This MUST run
+# AFTER the full db:seed: the bundled UsersTableSeeder calls users->delete()
+# then re-inserts its own accounts, which would otherwise wipe admin@school.com
+# on first boot. Running it last (on every boot) and idempotently guarantees the
+# admin survives and matches Hash::make('password').
+run_laravel db:seed --class=DefaultAdminSeeder --force >/dev/null 2>&1 \
+    || echo "[entrypoint] WARN: admin seeder skipped/failed." >&2
 
 echo "[entrypoint] Starting Apache on 0.0.0.0:${PORT}"
 exec /usr/sbin/apache2ctl -D FOREGROUND

@@ -10,32 +10,33 @@ use Illuminate\Support\Str;
 class DefaultAdminSeeder extends Seeder
 {
     /**
-     * Seed a guaranteed super-admin account so the app is always reachable
-     * (e.g. first boot on Render before the full dataset is seeded).
+     * Ensure a guaranteed super-admin account exists with a known password so
+     * the login page is always reachable (e.g. Render free tier, no shell).
      *
-     * Idempotent: uses firstOrCreate by email, so it never wipes or duplicates
-     * existing users.
+     * Uses updateOrCreate by email, so it never duplicates and always refreshes
+     * the password hash to the intended value — self-healing if a full
+     * db:seed (UsersTableSeeder) later wipes or overwrites the row.
      *
      * @return void
      */
     public function run()
     {
-        list($email, $username) = ['admin@school.com', 'admin'];
+        list($email, $username) = ['admin@school.com', 'super_admin'];
 
-        if (User::where('email', $email)->exists()) {
-            $this->command->info("Default admin already exists ({$email}); skipping.");
-            return;
+        $admin = User::updateOrCreate(
+            ['email'        => $email],
+            [
+                'name'       => 'System Administrator',
+                'username'   => $username,
+                'user_type'  => 'super_admin',
+                'code'       => strtoupper(Str::random(10)),
+            ]
+        );
+
+        if (! Hash::check('password', $admin->password)) {
+            $admin->update(['password' => Hash::make('password')]);
         }
 
-        User::create([
-            'name'       => 'System Administrator',
-            'email'      => $email,
-            'username'   => $username,
-            'password'   => Hash::make('password'),
-            'user_type'  => 'super_admin',
-            'code'       => strtoupper(Str::random(10)),
-        ]);
-
-        $this->command->info("Default admin created: {$email} / password");
+        $this->command->info("Default admin ensured: {$email} / password");
     }
 }
