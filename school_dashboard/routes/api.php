@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\Api\HealthController;
 
 /*
 |--------------------------------------------------------------------------
@@ -17,13 +18,7 @@ use App\Http\Controllers\Api\WebhookController;
 // ---------------------------------------------------------------
 // Health check (no auth required)
 // ---------------------------------------------------------------
-Route::get('/health', function () {
-    return response()->json([
-        'status'  => 'ok',
-        'service' => 'Algerian School Support API',
-        'time'    => now('UTC')->toIso8601String(),
-    ]);
-});
+Route::get('/health', [HealthController::class, 'index']);
 
 // ---------------------------------------------------------------
 // Facebook Messenger Webhook

@@ -1,16 +1,24 @@
 # =============================================================================
-#  Algerian School Support - school_dashboard (Laravel 8) Dockerfile
-#  Deployed on Render via render.yaml (dockerContext = ./school_dashboard).
-#  The container runs Apache + mod_php and listens on $PORT (Render-injected).
-#  All runtime secrets come from Render environment vars, never baked in.
+#  Algerian School Support - school_dashboard (Laravel 8)
+#  Deployed on Render via render.yaml (runtime: docker).
+#  Build context (/dockerContext) is ./school_dashboard, so this Dockerfile's
+#  files land at /var/www/html/ directly (NO /var/www/html/school_dashboard
+#  subfolder exists inside the container).
+#
+#  Runtime architecture:
+#    - Apache 2.4 + mod_php (php:8.2)
+#    - DocumentRoot -> /var/www/html/public
+#    - Listens on $PORT (Render-injected) — re-pointed by docker/entrypoint.sh
+#    - config:cache / route:cache / view:cache generated on BOOT (not baked),
+#      because APP_KEY and other env vars are injected at runtime.
 # =============================================================================
 
-# ---------------- Stage 1: Composer dependencies ----------------------------
+# ------------------------- Stage 1: Composer deps ---------------------------
 FROM composer:2 AS composer
 
 WORKDIR /app
 
-# Copy manifests first to maximise layer + Composer cache reuse.
+# Copy manifests first for layer + Composer cache reuse.
 COPY composer.json composer.lock ./
 RUN composer install \
       --no-dev \
@@ -21,53 +29,58 @@ RUN composer install \
       --prefer-dist \
       --ignore-platform-reqs
 
-# Bring in the rest of the source, then build a production-optimised autoloader.
+# Bring in the rest of the source, then build a production autoloader.
 COPY . .
 RUN composer dump-autoload --no-dev --optimize
 
-# ---------------- Stage 2: Runtime image (Apache + mod_php) -----------------
+# ---------------------- Stage 2: Runtime Apache image -----------------------
 FROM php:8.2-apache
 
-# Base system packages needed by extensions / dompdf / tidy output.
-# mbstring/xml/curl/fileinfo/pdo/sqlite3 are built into the php image and are
-# NOT passed to docker-php-ext-install (doing so fails the build). Only the
-# extensions that need compiling are installed below.
+# System libs needed to compile extensions + dompdf.
+# mbstring/xml/curl/fileinfo/pdo/sqlite3 are pre-built into the php image, so
+# they are NOT passed to docker-php-ext-install (doing so breaks the build).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git unzip libzip-dev libpng-dev libjpeg-dev libfreetype6-dev \
         libxml2-dev libcurl4-openssl-dev libsqlite3-dev \
-    && docker-php-ext-configure gd \
-        --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) \
-        pdo_sqlite zip bcmath gd \
-    && a2enmod rewrite headers \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) pdo_sqlite zip bcmath gd \
+    && a2enmod rewrite headers expires \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Expose Render's default arbitrary port (overridden at runtime by entrypoint).
-# NOTE: dockerContext is ./school_dashboard, so the Laravel files are copied to
-# /var/www/html/ directly (no /var/www/html/school_dashboard subfolder exists).
+# ---- Apache: explicit Laravel vhost (DocumentRoot + AllowOverride + index) --
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 
-# Point Apache at Laravel's public/ directory.
-RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf \
-    && sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf \
-    && echo 'ServerName localhost' >> /etc/apache2/apache2.conf
+RUN mkdir -p /etc/apache2/sites-available /etc/apache2/sites-enabled \
+    && printf '%s\n' \
+        'ServerName localhost' \
+        "DocumentRoot ${APACHE_DOCUMENT_ROOT}" \
+        "<Directory ${APACHE_DOCUMENT_ROOT}>" \
+        '    AllowOverride All' \
+        '    Require all granted' \
+        '    DirectoryIndex index.php' \
+        '    Options -Indexes +FollowSymLinks' \
+        '</Directory>' \
+        > /etc/apache2/sites-available/laravel.conf \
+    && rm -f /etc/apache2/sites-enabled/000-default.conf \
+    && ln -sf /etc/apache2/sites-available/laravel.conf /etc/apache2/sites-enabled/000-laravel.conf \
+    && printf 'Listen 80\n' > /etc/apache2/ports.conf \
+    && which apache2ctl >/dev/null
 
 WORKDIR /var/www/html
 
-# Copy the installed vendor + source from the Composer stage.
-COPY --from=composer /app /var/www/html/
+# Copy the app + vendor from Composer stage, owned by the web user.
+COPY --chown=www-data:www-data --from=composer /app /var/www/html/
 
-# Laravel runtime entrypoint (Apache port = $PORT + bootstrapping).
+# Laravel runtime entrypoint (Apache port = $PORT, caches, permissions).
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# NOTE: config/route/view caches are intentionally NOT baked here. Render
-# injects env at runtime, so baking caches with empty APP_KEY would lock in
-# invalid config. Laravel boots fresh from runtime env instead.
-
-# Writeable SQLite location (Laravel default) for the free plan — no disk.
-RUN mkdir -p /var/www/html/database /var/www/html/storage \
-    && chown -R www-data:www-data /var/www/html/database /var/www/html/storage
+# Pre-create Laravel runtime storage subdirectories (writable by www-data).
+RUN mkdir -p storage/app/public storage/framework/cache/data \
+             storage/framework/sessions storage/framework/views \
+             storage/logs bootstrap/cache \
+    && chown -R www-data:www-data storage bootstrap/cache \
+    && chmod -R ug+rwX storage bootstrap/cache
 
 EXPOSE 80
 

@@ -1,46 +1,90 @@
 #!/usr/bin/env sh
-set -e
+set -eu
 
-# ---------------------------------------------------------------------------
-# Render/cloud entrypoint for the Algerian School Support Laravel app.
-# Render injects $PORT on web services; Apache must bind to that port instead
-# of the Dockerfile default 80 so Render's health checks succeed.
-# SQLite uses Laravel's default path (database/database.sqlite) inside the
-# container. On Render's free plan there is no persistent disk, so data is
-# ephemeral across redeploys; the shipped DB is re-seeded + migrated on boot.
-# ---------------------------------------------------------------------------
+# =============================================================================
+#  Render/cloud entrypoint for the Algerian School Support Laravel app.
+#  Runs as root, then exec's Apache (which spawns www-data workers).
+#
+#  1. Re-point Apache to Render's $PORT (Apache defaults to 80).
+#  2. Fix Laravel runtime permissions (storage + bootstrap/cache).
+#  3. Clear stale caches, then build config/route/view caches from runtime env.
+#  4. Apply DB migrations.
+#  5. Launch Apache in the foreground.
+# =============================================================================
 
 PORT="${PORT:-80}"
-DB_DATABASE="${DB_DATABASE:-/var/www/html/database/database.sqlite}"
+APP_DIR="${APP_DIR:-/var/www/html}"
+DB_DATABASE="${DB_DATABASE:-${APP_DIR}/database/database.sqlite}"
 
-# Point Apache's Listen + VirtualHost ports at $PORT.
+echo "[entrypoint] Port=${PORT} AppDir=${APP_DIR}"
+
+# --- 1. Apache ports ---------------------------------------------------------
 sed -ri "s/^Listen .*/Listen ${PORT}/" /etc/apache2/ports.conf
-sed -ri "s/^<VirtualHost .*>/<VirtualHost *:${PORT}>/" /etc/apache2/sites-available/*.conf
+sed -ri "s/^<VirtualHost .*>/<VirtualHost *:${PORT}>/" /etc/apache2/sites-available/*.conf /etc/apache2/sites-enabled/*.conf
 
-# Ensure the database directory exists and is writable.
-mkdir -p "$(dirname "${DB_DATABASE}")"
-chown www-data:www-data "$(dirname "${DB_DATABASE}")" 2>/dev/null || true
+cd "${APP_DIR}"
 
-# First boot: seed the database from the app's shipped copy if empty/missing.
+# --- 2. Writable runtime dirs ------------------------------------------------
+# Ensure every Laravel runtime directory exists and is owned/writable by the
+# Apache worker user (www-data). bootstrap/cache must be writable so
+# route:cache / config:cache can write their serialized files.
+mkdir -p \
+    storage/app/public \
+    storage/framework/cache/data \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs \
+    bootstrap/cache \
+    "$(dirname "${DB_DATABASE}")"
+
+chown -R www-data:www-data storage bootstrap/cache "$(dirname "${DB_DATABASE}")" 2>/dev/null || true
+chmod -R ug+rwX storage bootstrap/cache 2>/dev/null || true
+
+# --- SQLite bootstrap --------------------------------------------------------
+# First boot: seed the DB from the app's shipped copy if empty/missing.
 if [ ! -f "${DB_DATABASE}" ] || [ ! -s "${DB_DATABASE}" ]; then
-    if [ -f database/database.sqlite ]; then
-        cp database/database.sqlite "${DB_DATABASE}"
+    if [ -f "${APP_DIR}/database/database.sqlite" ]; then
+        cp "${APP_DIR}/database/database.sqlite" "${DB_DATABASE}"
     else
         touch "${DB_DATABASE}"
     fi
 fi
 chown www-data:www-data "${DB_DATABASE}" 2>/dev/null || true
 
-# Make Laravel runtime storage writable (logs, cache, sessions, views).
-chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache 2>/dev/null || true
-chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache 2>/dev/null || true
+# --- 3. Clear stale caches, then build fresh ones ----------------------------
+# APP_KEY etc. are injected by Render only at runtime, so caches must NEVER be
+# baked at image build time. We generate them here. If caching fails (e.g.
+# missing secret on first boot), clear and boot uncached so the app still runs.
+# Run artisan as the Apache worker user so generated caches stay writable by
+# www-data. If `su` is unavailable, run as the current (root) user and re-chown.
+run_laravel() {
+    _cmd="php artisan $*"
+    if [ "$(id -u)" = "0" ]; then
+        if su -s /bin/sh www-data -c "$_cmd" 2>/dev/null; then
+            return 0
+        fi
+        sh -c "$_cmd" || return 1
+        chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
+        return 0
+    fi
+    php artisan "$@"
+}
 
-# Clear any stale config/cache so the app boots from the runtime env (APP_KEY etc.).
-php artisan config:clear 2>/dev/null || true
-php artisan cache:clear 2>/dev/null || true
+run_laravel config:clear  >/dev/null 2>&1 || true
+run_laravel cache:clear   >/dev/null 2>&1 || true
+run_laravel view:clear    >/dev/null 2>&1 || true
 
-# Apply any pending schema changes (non-fatal so health probe passes early).
-php artisan migrate --force 2>/dev/null || true
+if run_laravel config:cache && run_laravel route:cache && run_laravel view:cache; then
+    echo "[entrypoint] config:cache, route:cache, view:cache built OK."
+else
+    echo "[entrypoint] WARN: cache build failed; booting uncached." >&2
+    run_laravel config:clear >/dev/null 2>&1 || true
+    run_laravel route:clear  >/dev/null 2>&1 || true
+    run_laravel view:clear   >/dev/null 2>&1 || true
+fi
 
-echo "Laravel App listening on 0.0.0.0:${PORT}"
+# --- 4. Migrations (non-fatal so the health probe can pass early) ------------
+run_laravel migrate --force >/dev/null 2>&1 || echo "[entrypoint] WARN: migrate skipped/failed." >&2
+
+echo "[entrypoint] Starting Apache on 0.0.0.0:${PORT}"
 exec /usr/sbin/apache2ctl -D FOREGROUND
