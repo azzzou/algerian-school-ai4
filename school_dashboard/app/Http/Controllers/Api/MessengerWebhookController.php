@@ -155,30 +155,47 @@ class MessengerWebhookController extends Controller
     /**
      * Process message through the AI engine.
      *
-     * Primary: Google Gemini (real AI reply via GeminiService). Falls back to
-     * the FastAPI service and then to the local Python engine if Gemini is not
-     * configured or fails, so the bot always responds.
+     * Calls Google Gemini via GeminiService. Any exception is logged in detail
+     * and a clear, diagnostic error message is returned so the exact problem
+     * (missing key, wrong model, bad payload, HTTP/network error) is visible
+     * in the logs and to the user — no silent swallowing of failures.
      */
     protected function processWithAI(string $message, string $conversationId): array
     {
-        // Primary: Gemini API
         try {
             $reply = app(GeminiService::class)->reply($message, $conversationId);
+
             Log::info('Gemini reply generated', [
                 'sender' => $conversationId,
                 'length' => mb_strlen($reply),
             ]);
 
             return [
-                'reply_text' => $reply,
+                'reply_text'     => $reply,
                 'extracted_info' => [],
             ];
         } catch (\Throwable $e) {
-            Log::warning('Gemini reply failed, trying fallback engines', [
-                'error' => $e->getMessage(),
+            Log::error('Gemini reply FAILED', [
+                'sender'    => $conversationId,
+                'exception' => get_class($e),
+                'message'   => $e->getMessage(),
+                'file'      => $e->getFile(),
+                'line'      => $e->getLine(),
             ]);
-        }
 
+            return [
+                'reply_text' => 'عذراً، حصل خطأ تقني من مزوّد الذكاء الاصطناعي. (Gemini: ' . $e->getMessage() . ')',
+                'extracted_info' => [],
+                'error'         => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Kept for reference / opt-in legacy engines (FastAPI / local Python).
+     */
+    protected function processWithFallback(string $message, string $conversationId): array
+    {
         // Secondary: FastAPI service (if configured).
         $aiServiceUrl = config('services.messenger.ai_service_url');
         if ($aiServiceUrl) {

@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\Log;
  *
  * Endpoint:
  *   POST {base_url}/models/{model}:generateContent
- *   Auth via x-goog-api-key header (falls back to the ?key= query param).
+ *   Content-Type: application/json
+ *   Auth:        x-goog-api-key: {apiKey}
  *
  * The system prompt gives the bot the persona of a front-desk assistant for
  * "BAC Boumerdes" who replies warmly, professionally, and in the language the
@@ -23,7 +24,7 @@ class GeminiService
 {
     /** System prompt defining the bot persona. */
     public const SYSTEM_PROMPT = <<<'PROMPT'
-        أنت مساعد ذكي وموظف استقبال لمركز "BAC Boumerdes"، تجيب الطلاب بأسلوب ودي واحترافي وباللغة التي يفضلونها (العربية أو الفرنسية أو الدارجة الجزائرية) لمساعدتهم في استفساراتهم حول امتحانات البكالوريا والتسجيلات.
+        أنت مساعد ذكي وموظف استقبال لمركز "BAC Boumerdes"، تجيب الطلاب بأسلوب ودي واحترافي وبالغة التي يفضلونها (العربية أو الفرنسية أو الدارجة الجزائرية) لمساعدتهم في استفساراتهم حول امتحانات البكالوريا والتسجيلات.
         PROMPT;
 
     /**
@@ -33,21 +34,22 @@ class GeminiService
      * @param  string  $conversationId  Optional psid/conversation id for context.
      * @return string  The generated reply text.
      *
-     * @throws \Exception  If the API key is missing or the request fails.
+     * @throws \RuntimeException  If the API key/model is missing or the request
+     *                            fails. The message carries the Gemini diagnostic.
      */
     public function reply(string $message, string $conversationId = ''): string
     {
-        $apiKey = config('services.gemini.api_key');
-        $model  = config('services.gemini.model', 'gemini-3.6-flash');
+        $apiKey = $this->resolveApiKey();
+        $model  = $this->resolveModel();
         $base   = rtrim((string) config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta'), '/');
         $timeout = (int) config('services.gemini.timeout', 30);
 
-        if (!$apiKey) {
-            throw new \RuntimeException('Gemini API key is not configured (GEMINI_API_KEY / GOOGLE_API_KEY).');
-        }
-
         $url = "{$base}/models/{$model}:generateContent";
 
+        // Payload matches the Gemini generateContent REST contract:
+        //   - system_instruction.{ parts[].text }
+        //   - contents[] with role + parts[].text
+        //   - generationConfig (temperature)
         $payload = [
             'system_instruction' => [
                 'parts' => [['text' => self::SYSTEM_PROMPT]],
@@ -63,16 +65,41 @@ class GeminiService
             ],
         ];
 
-        $response = Http::timeout($timeout)
-            ->withHeaders(['x-goog-api-key' => $apiKey])
-            ->post($url, $payload);
+        Log::info('Gemini request prepared', [
+            'url'     => $url,
+            'model'   => $model,
+            'sender'  => $conversationId,
+            'message' => mb_substr($message, 0, 500),
+        ]);
+
+        try {
+            $response = Http::timeout($timeout)
+                ->withHeaders([
+                    'x-goog-api-key' => $apiKey,
+                    'Content-Type'   => 'application/json',
+                ])
+                ->post($url, $payload);
+        } catch (\Throwable $e) {
+            Log::error('Gemini request threw an exception', [
+                'url'      => $url,
+                'error'    => $e->getMessage(),
+                'exception'=> get_class($e),
+            ]);
+            throw new \RuntimeException('Gemini connection failed: ' . $e->getMessage(), 0, $e);
+        }
+
+        $body = $response->body();
 
         if (!$response->successful()) {
-            Log::error('Gemini API request failed', [
+            // Surface the real Gemini error payload so it can be diagnosed.
+            Log::error('Gemini API returned an error', [
                 'status' => $response->status(),
-                'body'   => $response->body(),
+                'url'    => $url,
+                'body'   => $body,
             ]);
-            throw new \RuntimeException('Gemini API returned status ' . $response->status());
+            throw new \RuntimeException(
+                sprintf('Gemini API error (HTTP %d): %s', $response->status(), $body)
+            );
         }
 
         $data = $response->json();
@@ -80,9 +107,60 @@ class GeminiService
         $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? null;
 
         if (!$text) {
+            Log::error('Gemini returned an empty/unexpected response', [
+                'status' => $response->status(),
+                'body'   => $body,
+            ]);
             throw new \RuntimeException('Gemini returned no reply text.');
         }
 
         return trim($text);
+    }
+
+    /**
+     * Resolve the Gemini API key from GEMINI_API_KEY or GOOGLE_API_KEY.
+     *
+     * @return string
+     */
+    protected function resolveApiKey(): string
+    {
+        $key = config('services.gemini.api_key');
+        if (!$key) {
+            $key = env('GEMINI_API_KEY') ?: env('GOOGLE_API_KEY');
+        }
+
+        if (!is_string($key) || trim($key) === '') {
+            throw new \RuntimeException('Gemini API key is not configured (set GEMINI_API_KEY or GOOGLE_API_KEY).');
+        }
+
+        return trim($key);
+    }
+
+    /**
+     * Resolve and validate the Gemini model name.
+     *
+     * Normalises a "gemini/xxx" prefix (the CrewAI/Google GenAI SDK convention)
+     * into the plain "xxx" name expected by the REST :generateContent endpoint.
+     *
+     * @return string
+     */
+    protected function resolveModel(): string
+    {
+        $model = trim((string) config('services.gemini.model', 'gemini-1.5-flash'));
+
+        if ($model === '') {
+            $model = 'gemini-1.5-flash';
+        }
+
+        // Strip an SDK-style "gemini/" prefix if present.
+        if (str_starts_with($model, 'gemini/')) {
+            $model = substr($model, strlen('gemini/'));
+        }
+
+        if (!str_starts_with($model, 'gemini-')) {
+            throw new \RuntimeException("Unsupported Gemini model '{$model}'. Expected a model like gemini-1.5-flash.");
+        }
+
+        return $model;
     }
 }
