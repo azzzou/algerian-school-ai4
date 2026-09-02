@@ -38,3 +38,9 @@ services:
         sync: false            # secret
       - key: AI_API_KEY
         sync: false            # secret
+      - key: GOOGLE_API_KEY
+        sync: false            # Gemini API key (or set GEMINI_API_KEY) - secret
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash
+      - key: GEMINI_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta

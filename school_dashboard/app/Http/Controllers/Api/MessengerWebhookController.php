@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Lead;
+use App\Services\GeminiService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -152,15 +153,34 @@ class MessengerWebhookController extends Controller
     }
 
     /**
-     * Process message through the AI engine (Gemini/CrewAI).
+     * Process message through the AI engine.
      *
-     * Calls the FastAPI service or directly uses the Python engine.
+     * Primary: Google Gemini (real AI reply via GeminiService). Falls back to
+     * the FastAPI service and then to the local Python engine if Gemini is not
+     * configured or fails, so the bot always responds.
      */
     protected function processWithAI(string $message, string $conversationId): array
     {
-        // Try calling the FastAPI service first
-        $aiServiceUrl = config('services.messenger.ai_service_url');
+        // Primary: Gemini API
+        try {
+            $reply = app(GeminiService::class)->reply($message, $conversationId);
+            Log::info('Gemini reply generated', [
+                'sender' => $conversationId,
+                'length' => mb_strlen($reply),
+            ]);
 
+            return [
+                'reply_text' => $reply,
+                'extracted_info' => [],
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('Gemini reply failed, trying fallback engines', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // Secondary: FastAPI service (if configured).
+        $aiServiceUrl = config('services.messenger.ai_service_url');
         if ($aiServiceUrl) {
             try {
                 $response = Http::timeout(30)
@@ -169,7 +189,7 @@ class MessengerWebhookController extends Controller
                         'conversation_id' => $conversationId,
                     ]);
 
-                if ($response->successful()) {
+                if ($response->successful() && isset($response->json()['reply_text'])) {
                     return $response->json();
                 }
             } catch (\Exception $e) {
@@ -179,7 +199,7 @@ class MessengerWebhookController extends Controller
             }
         }
 
-        // Fallback: Call Python script directly
+        // Tertiary: Call Python script directly.
         return $this->processWithPython($message, $conversationId);
     }
 
