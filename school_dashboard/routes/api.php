@@ -1,7 +1,7 @@
 ﻿<?php
 
 use Illuminate\Http\Request;
-use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\Api\MessengerWebhookController;
 use App\Http\Controllers\Api\HealthController;
 
 /*
@@ -23,9 +23,9 @@ Route::get('/health', [HealthController::class, 'index']);
 // ---------------------------------------------------------------
 // Facebook Messenger Webhook
 // ---------------------------------------------------------------
-Route::get('/webhook', [WebhookController::class, 'verify']);
+Route::get('/webhook', [MessengerWebhookController::class, 'verify']);
 
-Route::post('/webhook', [WebhookController::class, 'handle']);
+Route::post('/webhook', [MessengerWebhookController::class, 'handleWebhook']);
 
 // ---------------------------------------------------------------
 // Facebook Comments Webhook

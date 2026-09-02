@@ -22,7 +22,7 @@ class WebhookController extends Controller
         $token     = $request->input('hub_verify_token') ?? $request->input('hub.verify_token');
         $challenge = $request->input('hub_challenge') ?? $request->input('hub.challenge');
 
-        if ($mode === 'subscribe' && $token === 'Azzou123') {
+        if ($mode === 'subscribe' && $token === config('services.messenger.verify_token')) {
             Log::info('Webhook verified successfully');
             return response((string) $challenge, 200)->header('Content-Type', 'text/plain');
         }
