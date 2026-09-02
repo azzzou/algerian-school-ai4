@@ -41,10 +41,20 @@ class GeminiService
     {
         $apiKey = $this->resolveApiKey();
         $model  = $this->resolveModel();
-        $base   = rtrim((string) config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta'), '/');
         $timeout = (int) config('services.gemini.timeout', 30);
 
-        $url = "{$base}/models/{$model}:generateContent";
+        // Standard Google AI Studio endpoint:
+        //   https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+        $base = rtrim((string) config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta'), '/');
+        // Defensive: strip any trailing "/models" so a misconfigured base can
+        // never turn this into ".../v1beta/models/models/{model}:generateContent".
+        $base = preg_replace('#/models$#', '', $base);
+
+        $endpoint = $base . '/models/' . $model . ':generateContent';
+
+        // Send the key BOTH as the documented header and as a query param so it
+        // works regardless of which Gemini API version is exposed at the base URL.
+        $url = $endpoint . '?key=' . rawurlencode($apiKey);
 
         // Payload matches the Gemini generateContent REST contract:
         //   - system_instruction.{ parts[].text }
@@ -139,26 +149,29 @@ class GeminiService
     /**
      * Resolve and validate the Gemini model name.
      *
-     * Normalises a "gemini/xxx" prefix (the CrewAI/Google GenAI SDK convention)
-     * into the plain "xxx" name expected by the REST :generateContent endpoint.
+     * Returns a clean, explicit model id (e.g. "gemini-1.5-flash") suitable for
+     * the REST endpoint ".../v1beta/models/{model}:generateContent". It strips
+     * any SDK/environment noise: a "gemini/" prefix, an accidental "models/",
+     * or surrounding slashes — so "models/" is never duplicated in the URL.
      *
      * @return string
      */
     protected function resolveModel(): string
     {
-        $model = trim((string) config('services.gemini.model', 'gemini-1.5-flash'));
+        $model = trim((string) config('services.gemini.model', 'gemini-1.5-flash')) ?: 'gemini-1.5-flash';
 
-        if ($model === '') {
-            $model = 'gemini-1.5-flash';
-        }
+        // Strip an accidental "models/" path prefix, then any surrounding slashes.
+        $model = preg_replace('#^(models/)#i', '', $model);
+        $model = trim($model, " \t\n\r\0\x0B/");
 
-        // Strip an SDK-style "gemini/" prefix if present.
+        // Map an SDK-style "gemini/<name>" (Google GenAI SDK convention) to the
+        // REST model id "gemini-<name>" (e.g. gemini/1.5-flash -> gemini-1.5-flash).
         if (str_starts_with($model, 'gemini/')) {
-            $model = substr($model, strlen('gemini/'));
+            $model = 'gemini-' . substr($model, strlen('gemini/'));
         }
 
-        if (!str_starts_with($model, 'gemini-')) {
-            throw new \RuntimeException("Unsupported Gemini model '{$model}'. Expected a model like gemini-1.5-flash.");
+        if ($model === '' || !str_starts_with($model, 'gemini-')) {
+            throw new \RuntimeException("Unsupported Gemini model '{$model}'. Expected a model like gemini-1.5-flash or gemini-1.5-pro.");
         }
 
         return $model;
