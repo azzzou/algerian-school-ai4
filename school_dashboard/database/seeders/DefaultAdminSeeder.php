@@ -10,54 +10,46 @@ use Illuminate\Support\Str;
 class DefaultAdminSeeder extends Seeder
 {
     /**
-     * Ensure admin account(s) exist to match THIS template's authentication
-     * system and remain reachable on every startup (e.g. Render free tier,
-     * no shell access).
+     * Ensure a guaranteed admin account exists so login always works
+     * (e.g. Render free tier, no shell access).
      *
-     * Template's out-of-the-box super admin (per UsersTableSeeder):
-     *   email: cj@cj.com, password: cj, username: cj, user_type: super_admin
+     * Target account: username=admin, email=admin@school.com,
+     * password=password (hashed), user_type=super_admin.
      *
-     * Uses updateOrCreate keyed on email, so it never duplicates rows and
-     * always refreshes the password hash to the expected value — self-healing
-     * if a full db:seed (UsersTableSeeder) later wipes or overwrites the row.
+     * Uses updateOrCreate-style logic keyed on email, falling back to username,
+     * so it cleans up previously-seeded variants and never leaves a duplicate
+     * (both email and username are UNIQUE on the users table).
      *
      * @return void
      */
     public function run()
     {
-        $accounts = [
-            // The template's default super admin — exact match.
-            ['email'    => 'cj@cj.com',
-             'username' => 'cj',
-             'name'     => 'CJ Inspired',
-             'password' => 'cj',
-             'user_type'=> 'super_admin'],
+        $email    = 'admin@school.com';
+        $username = 'admin';
+        $password = 'password';
 
-            // Convenience alias with an easy-to-remember password.
-            ['email'    => 'admin@school.com',
-             'username' => 'super_admin',
-             'name'     => 'System Administrator',
-             'password' => 'password',
-             'user_type'=> 'super_admin'],
+        $data = [
+            'name'       => 'System Administrator',
+            'email'      => $email,
+            'username'   => $username,
+            'user_type'  => 'super_admin',
+            'password'   => Hash::make($password),
+            'code'       => strtoupper(Str::random(10)),
         ];
 
-        foreach ($accounts as $a) {
-            $user = User::updateOrCreate(
-                ['email' => $a['email']],
-                [
-                    'name'      => $a['name'],
-                    'username'  => $a['username'],
-                    'user_type' => $a['user_type'],
-                    'code'      => strtoupper(Str::random(10)),
-                ]
-            );
+        // Prefer the row by email; otherwise reuse a row that already claims
+        // the "admin" username (so we don't trip the UNIQUE(username) index).
+        $admin = User::where('email', $email)->first()
+                 ?? User::where('username', $username)->first();
 
-            // Guarantee the intended password (avoid re-hashing unnecessarily).
-            if (! app('hash')->check($a['password'], $user->password)) {
-                $user->update(['password' => Hash::make($a['password'])]);
-            }
-
-            $this->command->info("Default admin ensured: {$a['email']} / {$a['password']}");
+        if ($admin) {
+            // Update the existing row in place (preserve its unique `code`).
+            unset($data['code']);
+            $admin->update($data);
+        } else {
+            User::create($data);
         }
+
+        $this->command->info("Admin ensured: {$email} / {$password} (username: {$username})");
     }
 }
