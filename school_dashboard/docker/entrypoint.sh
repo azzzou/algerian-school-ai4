@@ -12,7 +12,7 @@ set -eu
 #  5. Launch Apache in the foreground.
 # =============================================================================
 
-PORT="${PORT:-80}"
+PORT="${PORT:-10000}"
 APP_DIR="${APP_DIR:-/var/www/html}"
 DB_DATABASE="${DB_DATABASE:-${APP_DIR}/database/database.sqlite}"
 
@@ -26,8 +26,14 @@ if [ -z "${APP_KEY:-}" ]; then
 fi
 
 # --- 1. Apache ports ---------------------------------------------------------
-sed -ri "s/^Listen .*/Listen ${PORT}/" /etc/apache2/ports.conf
-sed -ri "s/^<VirtualHost .*>/<VirtualHost *:${PORT}>/" /etc/apache2/sites-available/*.conf /etc/apache2/sites-enabled/*.conf
+# Bind Apache deterministically to Render's $PORT (default 10000). We WRITE the
+# files outright instead of relying on sed matching the base image, so the
+# container is guaranteed to open a listening port (avoids Render's
+# "no open ports detected" failure).
+printf 'Listen %s\n' "${PORT}" > /etc/apache2/ports.conf
+# Re-point the site's <VirtualHost *:80> to <VirtualHost *:$PORT>.
+sed -ri "s/^<VirtualHost \*:[0-9]+>/<VirtualHost *:${PORT}>/" \
+    /etc/apache2/sites-available/*.conf /etc/apache2/sites-enabled/*.conf 2>/dev/null || true
 
 cd "${APP_DIR}"
 

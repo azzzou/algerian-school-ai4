@@ -48,18 +48,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ---- Apache: explicit Laravel vhost (DocumentRoot + AllowOverride + index) --
+# Bound to *:80 at build time; docker/entrypoint.sh rewrites it to Render's
+# $PORT (default 10000) at runtime so the container actually opens a port.
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 
 RUN mkdir -p /etc/apache2/sites-available /etc/apache2/sites-enabled \
     && printf '%s\n' \
         'ServerName localhost' \
-        "DocumentRoot ${APACHE_DOCUMENT_ROOT}" \
-        "<Directory ${APACHE_DOCUMENT_ROOT}>" \
-        '    AllowOverride All' \
-        '    Require all granted' \
-        '    DirectoryIndex index.php' \
-        '    Options -Indexes +FollowSymLinks' \
+        '<VirtualHost *:80>' \
+        "    DocumentRoot ${APACHE_DOCUMENT_ROOT}" \
+        "    <Directory ${APACHE_DOCUMENT_ROOT}>" \
+        '        AllowOverride All' \
+        '        Require all granted' \
+        '        DirectoryIndex index.php' \
+        '        Options -Indexes +FollowSymLinks' \
+        '    </Directory>' \
+        '<Directory /var/www/html/>' \
+        '    Options -Indexes' \
         '</Directory>' \
+        '</VirtualHost>' \
         > /etc/apache2/sites-available/laravel.conf \
     && rm -f /etc/apache2/sites-enabled/000-default.conf \
     && ln -sf /etc/apache2/sites-available/laravel.conf /etc/apache2/sites-enabled/000-laravel.conf \
