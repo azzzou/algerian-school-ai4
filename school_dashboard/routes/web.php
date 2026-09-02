@@ -14,7 +14,7 @@ Route::get('/ai-dashboard/lead/{id}', 'LeadController@show')->name('ai.dashboard
 Route::group(['middleware' => 'auth'], function () {
 
     Route::get('/', 'HomeController@dashboard')->name('home');
-    Route::get('/home', 'HomeController@dashboard')->name('home');
+    Route::get('/home', 'HomeController@dashboard')->name('home.index');
     Route::get('/dashboard', 'HomeController@dashboard')->name('dashboard');
 
     Route::group(['prefix' => 'my_account'], function() {
