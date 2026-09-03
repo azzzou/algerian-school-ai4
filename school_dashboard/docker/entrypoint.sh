@@ -88,6 +88,7 @@ run_laravel() {
 
 run_laravel config:clear  >/dev/null 2>&1 || true
 run_laravel cache:clear   >/dev/null 2>&1 || true
+run_laravel route:clear   >/dev/null 2>&1 || true
 run_laravel view:clear    >/dev/null 2>&1 || true
 
 if run_laravel config:cache && run_laravel route:cache && run_laravel view:cache; then
