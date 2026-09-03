@@ -198,11 +198,35 @@ class MessengerWebhookController extends Controller
             ]);
 
             return [
-                'reply_text' => 'عذراً، حصل خطأ تقني من مزوّد الذكاء الاصطناعي. (Gemini: ' . $e->getMessage() . ')',
+                // Send the REAL, verbatim message from Gemini / the exception
+                // straight into the Messenger reply for final diagnostics, instead
+                // of a generic message. The underlying/previous exception holds the
+                // raw HTTP/Gemini error text, so prefer it when present.
+                'reply_text' => '[Gemini Error] ' . $this->exceptionMessage($e),
                 'extracted_info' => [],
                 'error'         => $e->getMessage(),
             ];
         }
+    }
+
+    /**
+     * Build the raw, verbatim error text from an exception for on-screen diagnostics.
+     *
+     * Prefers the message of the previous/underlying exception (which typically
+     * carries Gemini's literal HTTP/raw error) and falls back to the top-level
+     * exception message. Returns a compact single string safe for Messenger.
+     */
+    protected function exceptionMessage(\Throwable $e): string
+    {
+        $prev = $e->getPrevious();
+        if ($prev) {
+            $text = $prev->getMessage();
+            if (trim((string) $text) !== '') {
+                return trim($text);
+            }
+        }
+
+        return trim((string) $e->getMessage());
     }
 
     /**
