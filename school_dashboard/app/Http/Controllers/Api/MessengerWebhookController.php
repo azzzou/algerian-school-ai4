@@ -127,6 +127,9 @@ class MessengerWebhookController extends Controller
             $messageText = $message['text'];
             $messageId = $message['mid'] ?? null;
 
+            // Simple entry log: confirm the request reaches this code with text.
+            Log::info('Webhook incoming text: ' . $messageText . ' (sender=' . $senderId . ')');
+
             Log::info('Messenger message received', [
                 'sender' => $senderId,
                 'text' => $messageText,
@@ -175,12 +178,23 @@ class MessengerWebhookController extends Controller
                 'extracted_info' => [],
             ];
         } catch (\Throwable $e) {
-            Log::error('Gemini reply FAILED', [
-                'sender'    => $conversationId,
-                'exception' => get_class($e),
-                'message'   => $e->getMessage(),
-                'file'      => $e->getFile(),
-                'line'      => $e->getLine(),
+            // Definitive, complete logging of any GeminiService exception so the
+            // root cause is unmistakable in Render Logs: full message, request
+            // sender, exception class, file/line, full trace, and (if present)
+            // the previous/underlying exception chain (e.g. the HTTP client or
+            // Gemini's raw error). Nothing is swallowed.
+            \Log::error('Gemini reply FAILED (root cause)', [
+                'sender'     => $conversationId,
+                'message'    => $e->getMessage(),
+                'exception'  => get_class($e),
+                'file'       => $e->getFile(),
+                'line'       => $e->getLine(),
+                'trace'      => $e->getTraceAsString(),
+                'previous'   => $e->getPrevious() ? [
+                    'class'   => get_class($e->getPrevious()),
+                    'message' => $e->getPrevious()->getMessage(),
+                    'trace'   => $e->getPrevious()->getTraceAsString(),
+                ] : null,
             ]);
 
             return [
