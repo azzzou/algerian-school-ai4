@@ -43,18 +43,22 @@ class GeminiService
         $model  = $this->resolveModel();
         $timeout = (int) config('services.gemini.timeout', 30);
 
-        // Standard Google AI Studio endpoint:
-        //   https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
-        $base = rtrim((string) config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta'), '/');
-        // Defensive: strip any trailing "/models" so a misconfigured base can
-        // never turn this into ".../v1beta/models/models/{model}:generateContent".
-        $base = preg_replace('#/models$#', '', $base);
+        // Build the standard Google AI Studio endpoint explicitly and decisively.
+        // The model is cleaned below so "models/" or "gemini/" prefixes can never
+        // leak into the URL and cause a duplicate "models/models/... : generateContent".
+        $cleanModel = preg_replace('#^(models/|gemini/)#', '', trim($model));
+        if (empty($cleanModel)) {
+            $cleanModel = 'gemini-1.5-flash';
+        }
 
-        $endpoint = $base . '/models/' . $model . ':generateContent';
+        $url = "https://generativelanguage.googleapis.com/v1beta/models/{$cleanModel}:generateContent?key=" . $apiKey;
 
-        // Send the key BOTH as the documented header and as a query param so it
-        // works regardless of which Gemini API version is exposed at the base URL.
-        $url = $endpoint . '?key=' . rawurlencode($apiKey);
+        Log::info('Gemini request prepared', [
+            'url'     => $url,
+            'model'   => $cleanModel,
+            'sender'  => $conversationId,
+            'message' => mb_substr($message, 0, 500),
+        ]);
 
         // Payload matches the Gemini generateContent REST contract:
         //   - system_instruction.{ parts[].text }
@@ -74,13 +78,6 @@ class GeminiService
                 'temperature' => 0.7,
             ],
         ];
-
-        Log::info('Gemini request prepared', [
-            'url'     => $url,
-            'model'   => $model,
-            'sender'  => $conversationId,
-            'message' => mb_substr($message, 0, 500),
-        ]);
 
         try {
             $response = Http::timeout($timeout)
