@@ -39,18 +39,15 @@ class GeminiService
      */
     public function reply(string $message, string $conversationId = ''): string
     {
-        $apiKey = $this->resolveApiKey();
-        $model  = $this->resolveModel();
+        $apiKey  = $this->resolveApiKey();
         $timeout = (int) config('services.gemini.timeout', 30);
 
-        // Build the standard Google AI Studio endpoint explicitly and decisively.
-        // The model is cleaned below so "models/" or "gemini/" prefixes can never
-        // leak into the URL and cause a duplicate "models/models/... : generateContent".
-        $cleanModel = preg_replace('#^(models/|gemini/)#', '', trim($model));
-        if (empty($cleanModel)) {
-            $cleanModel = 'gemini-1.5-flash';
-        }
+        // Model is hardcoded and fixed at code level so no external env var can
+        // inject a "models/" prefix (or a stale model id) that would 404.
+        $cleanModel = 'gemini-1.5-flash';
 
+        // Fixed, fully-explicit API endpoint. Built from the constant model and
+        // the resolved key only — no legacy/external variables are merged in.
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$cleanModel}:generateContent?key=" . $apiKey;
 
         Log::info('Gemini request prepared', [
@@ -141,36 +138,5 @@ class GeminiService
         }
 
         return trim($key);
-    }
-
-    /**
-     * Resolve and validate the Gemini model name.
-     *
-     * Returns a clean, explicit model id (e.g. "gemini-1.5-flash") suitable for
-     * the REST endpoint ".../v1beta/models/{model}:generateContent". It strips
-     * any SDK/environment noise: a "gemini/" prefix, an accidental "models/",
-     * or surrounding slashes — so "models/" is never duplicated in the URL.
-     *
-     * @return string
-     */
-    protected function resolveModel(): string
-    {
-        $model = trim((string) config('services.gemini.model', 'gemini-1.5-flash')) ?: 'gemini-1.5-flash';
-
-        // Strip an accidental "models/" path prefix, then any surrounding slashes.
-        $model = preg_replace('#^(models/)#i', '', $model);
-        $model = trim($model, " \t\n\r\0\x0B/");
-
-        // Map an SDK-style "gemini/<name>" (Google GenAI SDK convention) to the
-        // REST model id "gemini-<name>" (e.g. gemini/1.5-flash -> gemini-1.5-flash).
-        if (str_starts_with($model, 'gemini/')) {
-            $model = 'gemini-' . substr($model, strlen('gemini/'));
-        }
-
-        if ($model === '' || !str_starts_with($model, 'gemini-')) {
-            throw new \RuntimeException("Unsupported Gemini model '{$model}'. Expected a model like gemini-1.5-flash or gemini-1.5-pro.");
-        }
-
-        return $model;
     }
 }

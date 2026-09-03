@@ -63,18 +63,16 @@ return [
     |--------------------------------------------------------------------------
     |
     | Uses the Gemini REST API:
-    |   POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+    |   POST https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent
     |
-    | API key is resolved from GEMINI_API_KEY first, then GOOGLE_API_KEY.
-    | The model is validated/normalised at runtime (see GeminiService::resolveModel)
-    | and defaults to the stable gemini-1.5-flash. Set GEMINI_MODEL to override.
+    | The model id and endpoint are hardcoded in GeminiService (gemini-1.5-flash)
+    | so no env var can corrupt them. Only the API key is configurable here,
+    | resolved from GEMINI_API_KEY first, then GOOGLE_API_KEY.
     |
     */
     'gemini' => [
-        'api_key'  => env('GEMINI_API_KEY', env('GOOGLE_API_KEY')),
-        'model'    => env('GEMINI_MODEL', 'gemini-1.5-flash'),
-        'base_url' => env('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta'),
-        'timeout'  => (int) env('GEMINI_TIMEOUT', 30),
+        'api_key' => env('GEMINI_API_KEY', env('GOOGLE_API_KEY')),
+        'timeout' => (int) env('GEMINI_TIMEOUT', 30),
     ],
 
 ];
