@@ -44,7 +44,7 @@ class GeminiService
 
         // Model is hardcoded and fixed at code level so no external env var can
         // inject a "models/" prefix (or a stale model id) that would 404.
-        $cleanModel = 'gemini-2.0-flash';
+        $cleanModel = 'gemini-3.6-flash';
 
         // Fixed, fully-explicit API endpoint. Built from the constant model and
         // the resolved key only — no legacy/external variables are merged in.
