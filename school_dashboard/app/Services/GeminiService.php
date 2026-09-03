@@ -93,16 +93,23 @@ class GeminiService
         }
 
         $body = $response->body();
+        $bodyText = $response->body(); // raw, un-truncated
 
         if (!$response->successful()) {
-            // Surface the real Gemini error payload so it can be diagnosed.
+            // TEMP-DIAG: dump the FULL raw response Google returns, verbatim, on
+            // its own log line so the exact 404 text (model/permission error) is
+            // captured even if context arrays get truncated. Remove after triage.
+            Log::error(
+                'Gemini API raw response (HTTP ' . $response->status() . ') for ' . $url . ' :: ' . $bodyText
+            );
             Log::error('Gemini API returned an error', [
                 'status' => $response->status(),
                 'url'    => $url,
                 'body'   => $body,
+                'json'   => $response->json(),
             ]);
             throw new \RuntimeException(
-                sprintf('Gemini API error (HTTP %d): %s', $response->status(), $body)
+                sprintf('Gemini API error (HTTP %d): %s', $response->status(), $bodyText)
             );
         }
 
@@ -111,10 +118,9 @@ class GeminiService
         $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? null;
 
         if (!$text) {
-            Log::error('Gemini returned an empty/unexpected response', [
-                'status' => $response->status(),
-                'body'   => $body,
-            ]);
+            Log::error(
+                'Gemini returned empty/unexpected raw response for ' . $url . ' :: ' . $bodyText
+            );
             throw new \RuntimeException('Gemini returned no reply text.');
         }
 
